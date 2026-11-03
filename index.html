@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegant Mind · Xazina ovi</title>
+<style>
+:root{--navy:#1c2761;--red:#b3122b;--cream:#f7f1e3;--gold:#b08d4a;--ink:#23223a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.5}
+header{background:var(--navy);color:#fff;text-align:center;padding:14px 12px 12px;border-bottom:4px double var(--gold)}
+header img{width:78px;height:78px;border-radius:50%;background:#fff;display:block;margin:0 auto 6px}
+header h1{margin:0;font-size:22px;letter-spacing:2px;text-transform:uppercase}
+header p{margin:2px 0 0;font-size:13px;font-style:italic;color:#e9d9ae}
+#bar{display:none;background:#fff;border-bottom:1px solid var(--gold);padding:8px 14px;font-size:14px;justify-content:space-between;gap:8px}
+#bar b{color:var(--navy)}
+main{max-width:480px;margin:0 auto;padding:18px 14px 40px}
+.card{background:#fff;border:1px solid var(--gold);outline:1px solid var(--gold);outline-offset:-6px;padding:22px 20px;margin-bottom:16px;box-shadow:0 2px 8px rgba(28,39,97,.12)}
+h2{margin:0 0 10px;color:var(--navy);font-size:20px;text-align:center}
+p{margin:8px 0}
+.hint{font-size:19px;font-style:italic;text-align:center;color:var(--navy);padding:6px 0}
+button,.btn{display:block;width:100%;border:0;background:var(--navy);color:#fff;font:inherit;font-size:17px;padding:13px;margin-top:12px;cursor:pointer;border-bottom:3px solid var(--gold);text-align:center}
+button.alt{background:#fff;color:var(--navy);border:1px solid var(--navy)}
+button.red{background:var(--red)}
+button:disabled{opacity:.5}
+input[type=text],input[type=number]{width:100%;font:inherit;font-size:17px;padding:12px;margin-top:8px;border:1px solid var(--navy);background:#fffdf7}
+label{display:block;margin-top:10px;font-size:14px;color:var(--navy)}
+.team{border:1px solid #d9cba6;padding:11px;margin-top:8px;background:#fffdf7;cursor:pointer}
+.team.on{border:2px solid var(--red);background:#fdf0f1}
+.err{color:var(--red);text-align:center;margin-top:10px}
+.ok{color:#256b3a;text-align:center}
+.small{font-size:13px;color:#6b6a7c;text-align:center}
+a.link{color:var(--navy);text-decoration:underline;cursor:pointer}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="Elegant Mind">
+  <h1>Elegant Mind</h1>
+  <p>Xazina ovi · Biz bilan kelajak sari</p>
+</header>
+<div id="bar"></div>
+<main id="app"></main>
+
+<script>
+const API = 'https://kmsnqmroqnqnkmanblik.supabase.co';
+const KEY = 'sb_publishable_WYN4VaquqY9qaSMC2vbLxw_nbKQuHG1';
+
+const app = document.getElementById('app'), bar = document.getElementById('bar');
+let team = localStorage.getItem('xo_team'), timer = null;
+let code = new URLSearchParams(location.search).get('s');
+let pick = null, mode = null;
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const show = html => { app.innerHTML = html; };
+
+async function rpc(fn, args) {
+  const r = await fetch(API + '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: { apikey: KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(args || {})
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1000 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => b ? res(b) : rej(new Error('rasm')), 'image/jpeg', 0.7);
+    };
+    img.onerror = () => rej(new Error('rasm'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function upload(file) {
+  const blob = await shrink(file);
+  const name = team + '/' + Date.now() + '.jpg';
+  const r = await fetch(API + '/storage/v1/object/photos/' + name, {
+    method: 'POST', headers: { apikey: KEY, 'Content-Type': 'image/jpeg' }, body: blob
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return API + '/storage/v1/object/public/photos/' + name;
+}
+
+function gps() {
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => res(null), { enableHighAccuracy: true, timeout: 9000 });
+  });
+}
+
+function setBar(st) {
+  if (!st || st.phase === 'lobby' || !st.total) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = '<span><b>' + esc(st.name) + '</b></span><span>Bekat: <b>' + st.done + '/' + st.total + '</b></span><span>Ball: <b>' + (st.score || 0) + '</b></span>';
+}
+
+function problem(text, again) {
+  show('<div class="card"><h2>Diqqat</h2><p class="err">' + esc(text) + '</p><button id="again">Qayta urinish</button></div>');
+  document.getElementById('again').onclick = again || go;
+}
+
+/* ---------- Boshlang'ich oyna ---------- */
+function home() {
+  bar.style.display = 'none';
+  show('<div class="card"><h2>Xush kelibsiz!</h2><p>Jamoangizni yarating yoki tayyor jamoaga qo\'shiling.</p>' +
+    '<button id="mk">Jamoa yaratish</button><button id="jn" class="alt">Jamoaga qo\'shilish</button></div>');
+  document.getElementById('mk').onclick = formCreate;
+  document.getElementById('jn').onclick = formJoin;
+}
+
+function formCreate() {
+  show('<div class="card"><h2>Jamoa yaratish</h2>' +
+    '<label>Chipta raqamingiz</label><input type="number" id="tk" inputmode="numeric">' +
+    '<label>Jamoa nomi</label><input type="text" id="nm" maxlength="30">' +
+    '<div class="err" id="er"></div><button id="go">Yaratish</button><button class="alt" id="bk">Orqaga</button></div>');
+  document.getElementById('bk').onclick = home;
+  document.getElementById('go').onclick = async () => {
+    const er = document.getElementById('er'); er.textContent = '';
+    try {
+      const r = await rpc('create_team', { p_ticket: parseInt(document.getElementById('tk').value, 10) || 0, p_name: document.getElementById('nm').value });
+      if (r.error) { er.textContent = r.error; return; }
+      team = r.team_id; localStorage.setItem('xo_team', team); go();
+    } catch (e) { er.textContent = 'Aloqa xatosi. Qayta urining.'; }
+  };
+}
+
+async function formJoin() {
+  let list = [];
+  try { list = await rpc('list_teams'); } catch (e) { return problem('Aloqa xatosi.', formJoin); }
+  pick = null;
+  show('<div class="card"><h2>Jamoaga qo\'shilish</h2><label>Chipta raqamingiz</label><input type="number" id="tk" inputmode="numeric">' +
+    '<label>Jamoani tanlang</label><div id="ls">' +
+    (list.length ? list.map(t => '<div class="team" data-id="' + esc(t.id) + '"><b>' + esc(t.name) + '</b> <span class="small">(' + t.members + '/5)</span></div>').join('') : '<p class="small">Hozircha jamoa yo\'q. Avval jamoa yarating.</p>') +
+    '</div><div class="err" id="er"></div><button id="go">Qo\'shilish</button><button class="alt" id="bk">Orqaga</button></div>');
+  document.getElementById('bk').onclick = home;
+  document.querySelectorAll('.team').forEach(el => el.onclick = () => {
+    document.querySelectorAll('.team').forEach(x => x.classList.remove('on'));
+    el.classList.add('on'); pick = el.dataset.id;
+  });
+  document.getElementById('go').onclick = async () => {
+    const er = document.getElementById('er'); er.textContent = '';
+    if (!pick) { er.textContent = 'Jamoani tanlang'; return; }
+    try {
+      const r = await rpc('join_team', { p_ticket: parseInt(document.getElementById('tk').value, 10) || 0, p_team: pick });
+      if (r.error) { er.textContent = r.error; return; }
+      team = r.team_id; localStorage.setItem('xo_team', team); go();
+    } catch (e) { er.textContent = 'Aloqa xatosi. Qayta urining.'; }
+  };
+}
+
+/* ---------- Asosiy holat ---------- */
+async function go() {
+  clearTimeout(timer);
+  if (!team) return home();
+  let st;
+  try { st = await rpc('team_state', { p_team: team }); }
+  catch (e) { return problem('Internet bilan aloqa yo\'q.', go); }
+  if (st.phase === 'error') { localStorage.removeItem('xo_team'); team = null; return home(); }
+  setBar(st);
+  const leave = '<p class="small"><a class="link" id="lv">Jamoadan chiqish</a></p>';
+  const bindLeave = () => { const l = document.getElementById('lv'); if (l) l.onclick = () => { if (confirm('Telefonda bu jamoani o\'chirasizmi?')) { localStorage.removeItem('xo_team'); team = null; go(); } }; };
+
+  if (st.phase === 'lobby') {
+    show('<div class="card"><h2>' + esc(st.name) + '</h2><p class="ok">Jamoangiz tayyor.</p><p>A\'zolar soni: <b>' + st.members + '</b></p><p>O\'yin boshlanishini kuting. Sahifa o\'zi yangilanadi.</p></div>' + leave);
+    bindLeave(); timer = setTimeout(go, 4000); return;
+  }
+  if (st.phase === 'finished') {
+    show('<div class="card"><h2>Tabriklaymiz!</h2><p class="ok">Hamma bekatlar tugadi.</p><p>Jamoangiz bali: <b>' + st.score + '</b></p><p>' + esc(st.final_text) + '</p></div>');
+    return;
+  }
+  if (st.phase === 'hint') {
+    if (code) return arrive(null);
+    show('<div class="card"><h2>Navbatdagi jumboq</h2><div class="hint">' + esc(st.hint) + '</div><p class="small">Bekatga yetganingizda u yerdagi QR kodni telefon kamerasi bilan skaner qiling.</p></div>' + leave);
+    bindLeave(); return;
+  }
+  if (st.phase === 'pending') {
+    show('<div class="card"><h2>Rasm tekshirilmoqda</h2><p>Rasmingiz yuborildi. Tasdiqlanishini kuting, sahifa o\'zi yangilanadi.</p></div>');
+    timer = setTimeout(go, 4000); return;
+  }
+  if (st.phase === 'task') taskView(st);
+}
+
+async function arrive(photoUrl) {
+  show('<div class="card"><h2>Tekshirilmoqda...</h2><p class="small">Joylashuvingiz aniqlanmoqda.</p></div>');
+  const pos = await gps();
+  let r;
+  try { r = await rpc('arrive', { p_team: team, p_code: code, p_lat: pos ? pos.lat : null, p_lng: pos ? pos.lng : null, p_photo: photoUrl }); }
+  catch (e) { return problem('Aloqa xatosi.', () => arrive(photoUrl)); }
+  if (r.error) {
+    if (/rasmingizni/.test(r.error)) return photoForm('Bekatdagi rasm', 'Jamoangiz bekatda turgan rasmni yuboring.', f => arrive_photo(f));
+    show('<div class="card"><h2>Diqqat</h2><p class="err">' + esc(r.error) + '</p><button id="ok">Tushunarli</button></div>');
+    document.getElementById('ok').onclick = () => { code = null; history.replaceState(null, '', location.pathname); go(); };
+    return;
+  }
+  code = null; history.replaceState(null, '', location.pathname); go();
+}
+async function arrive_photo(file) { const u = await upload(file); return arrive(u); }
+
+function photoForm(title, text, onFile) {
+  show('<div class="card"><h2>' + esc(title) + '</h2><p>' + esc(text) + '</p>' +
+    '<input type="file" accept="image/*" capture id="fl" style="display:none">' +
+    '<button id="pk">Rasmga olish</button><div class="err" id="er"></div></div>');
+  const fl = document.getElementById('fl');
+  document.getElementById('pk').onclick = () => fl.click();
+  fl.onchange = async () => {
+    if (!fl.files[0]) return;
+    const b = document.getElementById('pk'); b.disabled = true; b.textContent = 'Yuborilmoqda...';
+    try { await onFile(fl.files[0]); }
+    catch (e) { document.getElementById('er').textContent = 'Rasm yuborilmadi. Qayta urining.'; b.disabled = false; b.textContent = 'Rasmga olish'; }
+  };
+}
+
+function taskView(st) {
+  if (st.task_type === 'photo') {
+    const note = st.rejected ? 'Oldingi rasm qabul qilinmadi. Qayta urinib ko\'ring!\n\n' : '';
+    return photoForm('Topshiriq', note + st.task, async f => { const u = await upload(f); await rpc('submit_photo', { p_team: team, p_url: u }); go(); });
+  }
+  const lock = st.locked_until && new Date(st.locked_until) > new Date()
+    ? '<p class="err">Ko\'p xato qildingiz. Qayta urinish: ' + new Date(st.locked_until).toLocaleTimeString('uz-UZ') + ' dan keyin.</p>' : '';
+  show('<div class="card"><h2>Topshiriq</h2><p>' + esc(st.task).replace(/\n/g, '<br>') + '</p>' +
+    '<label>Javobingiz</label><input type="text" id="an" autocomplete="off">' + lock +
+    '<div class="err" id="er"></div><button id="go">Yuborish</button></div>');
+  document.getElementById('go').onclick = async () => {
+    const er = document.getElementById('er'); er.textContent = '';
+    try {
+      const r = await rpc('submit_answer', { p_team: team, p_answer: document.getElementById('an').value });
+      if (r.error) { er.textContent = r.error; return; }
+      if (r.ok) return go();
+      er.textContent = 'Noto\'g\'ri javob. Yana urinib ko\'ring.'; setTimeout(go, 1800);
+    } catch (e) { er.textContent = 'Aloqa xatosi.'; }
+  };
+}
+
+go();
+</script>
+</body>
+</html>
