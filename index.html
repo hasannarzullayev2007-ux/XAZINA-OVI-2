@@ -30,6 +30,8 @@ label{display:block;margin-top:10px;font-size:14px;color:var(--navy)}
 .err{color:var(--red);text-align:center;margin-top:10px}
 .ok{color:#256b3a;text-align:center}
 .small{font-size:13px;color:#6b6a7c;text-align:center}
+@keyframes pop{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.25)}100%{transform:scale(1);opacity:1}}
+.star{font-size:70px;color:var(--gold);animation:pop .8s ease-out both;line-height:1.1}
 a.link{color:var(--navy);text-decoration:underline;cursor:pointer}
 </style>
 </head>
@@ -167,6 +169,38 @@ async function go() {
   catch (e) { return problem('Internet bilan aloqa yo\'q.', go); }
   if (st.phase === 'error') { localStorage.removeItem('xo_team'); team = null; return home(); }
   setBar(st);
+  const dk = 'xo_done_' + team, sk = 'xo_score_' + team;
+  const pd = localStorage.getItem(dk), ps = parseInt(localStorage.getItem(sk) || '0', 10);
+  localStorage.setItem(dk, st.done || 0); localStorage.setItem(sk, st.score || 0);
+  if (pd !== null && (st.done || 0) > parseInt(pd, 10)) return celebrate(st, (st.score || 0) - ps, () => renderState(st));
+  return renderState(st);
+}
+
+function celebrate(st, gained, next) {
+  const fin = st.phase === 'finished';
+  show('<canvas id="cf" style="position:fixed;left:0;top:0;pointer-events:none;z-index:5"></canvas><div class="card" style="text-align:center;position:relative;z-index:6"><div class="star">&#9733;</div><h2>' +
+    (fin ? 'Hamma bekatlar tugadi!' : 'Tabriklaymiz!') + '</h2><p>' + (fin ? 'Siz xazinaga yetib keldingiz.' : 'Jumboqni yechdingiz, ajoyib ish!') + '</p>' +
+    (gained > 0 ? '<p class="ok" style="font-size:26px"><b>+' + gained + ' ball</b></p>' : '') +
+    '<button id="nx">' + (fin ? 'Davom etish' : 'Keyingi jumboq') + '</button></div>');
+  confetti();
+  document.getElementById('nx').onclick = next;
+}
+
+function confetti() {
+  const c = document.getElementById('cf'); if (!c) return;
+  const x = c.getContext('2d'); c.width = innerWidth; c.height = innerHeight;
+  const cols = ['#1c2761', '#b3122b', '#b08d4a', '#256b3a'];
+  const p = Array.from({ length: 120 }, () => ({ x: Math.random() * c.width, y: -20 - Math.random() * c.height * .6, w: 6 + Math.random() * 6, h: 9 + Math.random() * 8,
+    vx: -1 + Math.random() * 2, vy: 2 + Math.random() * 3.5, r: Math.random() * 6, vr: -.2 + Math.random() * .4, c: cols[Math.floor(Math.random() * cols.length)] }));
+  let t = 0;
+  (function f() {
+    x.clearRect(0, 0, c.width, c.height);
+    p.forEach(a => { a.x += a.vx; a.y += a.vy; a.r += a.vr; x.save(); x.translate(a.x, a.y); x.rotate(a.r); x.fillStyle = a.c; x.fillRect(-a.w / 2, -a.h / 2, a.w, a.h); x.restore(); });
+    if (++t < 280 && document.getElementById('cf')) requestAnimationFrame(f);
+  })();
+}
+
+async function renderState(st) {
   const leave = '<p class="small"><a class="link" id="lv">Jamoadan chiqish</a></p>';
   const bindLeave = () => { const l = document.getElementById('lv'); if (l) l.onclick = () => { if (confirm('Telefonda bu jamoani o\'chirasizmi?')) { localStorage.removeItem('xo_team'); team = null; go(); } }; };
 
@@ -180,7 +214,8 @@ async function go() {
   }
   if (st.phase === 'hint') {
     if (code) return arrive(null);
-    show('<div class="card"><h2>Navbatdagi jumboq</h2><div class="hint">' + esc(st.hint) + '</div><p class="small">Bekatga yetganingizda u yerdagi QR kodni telefon kamerasi bilan skaner qiling.</p></div>' + leave);
+    show('<div class="card"><h2>Navbatdagi jumboq</h2><div class="hint">' + esc(st.hint) + '</div></div>' +
+      '<div class="card"><h2>Nima qilish kerak?</h2><p><b>1.</b> Jumboqni yeching va o\'sha joyni toping.<br><b>2.</b> O\'sha manzilga boring. U yerda keyingi QR kod sizni kutadi.<br><b>3.</b> QR kodni telefon kamerasi bilan skaner qiling.</p></div>' + leave);
     bindLeave(); return;
   }
   if (st.phase === 'pending') {
@@ -224,7 +259,7 @@ function quizView(st) {
   const qs = st.questions || [];
   const locked = st.locked_until && new Date(st.locked_until) > new Date();
   const lock = locked ? '<p class="err">Qayta urinish: ' + new Date(st.locked_until).toLocaleTimeString('uz-UZ') + ' dan keyin.</p>' : '';
-  show('<div class="card"><h2>Tezkor savollar</h2><p>' + esc(st.task) + '</p><p class="ok" id="tt">Vaqt: 60</p>' +
+  show('<div class="card"><h2>Tezkor savollar</h2><p class="ok">Bekatga yetdingiz!</p><p>' + esc(st.task) + '</p><p class="ok" id="tt">Vaqt: 60</p>' +
     qs.map(q => '<label>' + esc(q) + ' =</label><input type="number" inputmode="numeric" class="qa">').join('') + lock +
     '<div class="err" id="er"></div><button id="go">Yuborish</button></div>');
   let left = 60, sent = false;
@@ -249,11 +284,11 @@ function taskView(st) {
   if (st.task_type === 'quiz') return quizView(st);
   if (st.task_type === 'photo') {
     const note = st.rejected ? 'Oldingi rasm qabul qilinmadi. Qayta urinib ko\'ring!\n\n' : '';
-    return photoForm('Topshiriq', note + st.task, async f => { const u = await upload(f); await rpc('submit_photo', { p_team: team, p_url: u }); go(); });
+    return photoForm('Topshiriq', note + 'Bekatga yetdingiz! ' + st.task, async f => { const u = await upload(f); await rpc('submit_photo', { p_team: team, p_url: u }); go(); });
   }
   const lock = st.locked_until && new Date(st.locked_until) > new Date()
     ? '<p class="err">Ko\'p xato qildingiz. Qayta urinish: ' + new Date(st.locked_until).toLocaleTimeString('uz-UZ') + ' dan keyin.</p>' : '';
-  show('<div class="card"><h2>Topshiriq</h2><p>' + esc(st.task).replace(/\n/g, '<br>') + '</p>' +
+  show('<div class="card"><h2>Topshiriq</h2><p class="ok">Bekatga yetdingiz! Topshiriqni bajaring.</p><p>' + esc(st.task).replace(/\n/g, '<br>') + '</p>' +
     '<label>Javobingiz</label><input type="text" id="an" autocomplete="off">' + lock +
     '<div class="err" id="er"></div><button id="go">Yuborish</button></div>');
   document.getElementById('go').onclick = async () => {
