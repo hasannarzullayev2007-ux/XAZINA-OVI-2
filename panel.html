@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Elegant Mind · Boshqaruv paneli</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--navy:#1c2761;--red:#b3122b;--cream:#f7f1e3;--gold:#b08d4a;--ink:#23223a;--green:#256b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Georgia,"Times New Roman",serif}
+header{background:var(--navy);color:#fff;display:flex;align-items:center;gap:14px;padding:8px 18px;border-bottom:4px double var(--gold);flex-wrap:wrap}
+header img{width:54px;height:54px;border-radius:50%;background:#fff}
+header h1{margin:0;font-size:19px;letter-spacing:2px;text-transform:uppercase}
+header small{display:block;font-style:italic;color:#e9d9ae;font-size:12px}
+.sp{flex:1}
+.chip{background:#fff;color:var(--navy);padding:4px 12px;border:1px solid var(--gold);font-size:14px}
+button{font:inherit;cursor:pointer;border:0;background:var(--navy);color:#fff;padding:8px 14px;border-bottom:3px solid var(--gold)}
+button.red{background:var(--red)}button.grn{background:var(--green)}button.alt{background:#fff;color:var(--navy);border:1px solid var(--navy)}
+button.sm{padding:5px 10px;font-size:13px}
+#wrap{display:grid;grid-template-columns:380px 1fr;gap:14px;padding:14px;height:calc(100vh - 80px)}
+#left{overflow:auto;padding-right:4px}
+#map{border:1px solid var(--gold);outline:1px solid var(--gold);outline-offset:-5px;min-height:300px}
+h2{margin:6px 0 8px;font-size:16px;color:var(--navy);border-bottom:1px solid var(--gold);padding-bottom:4px}
+.box{background:#fff;border:1px solid var(--gold);padding:10px;margin-bottom:10px}
+.team{background:#fff;border:1px solid #d9cba6;padding:9px 11px;margin-bottom:7px;cursor:pointer}
+.team:hover{border-color:var(--navy)}
+.team b{color:var(--navy)}.team .r{float:right}
+.badge{background:var(--red);color:#fff;padding:1px 7px;font-size:12px;border-radius:9px}
+.small{font-size:13px;color:#6b6a7c}
+.pend{display:flex;gap:8px;margin-bottom:8px;border-bottom:1px dashed #d9cba6;padding-bottom:8px}
+.pend img,.ph img{width:84px;height:84px;object-fit:cover;border:1px solid var(--gold);cursor:pointer}
+.ph{display:inline-block;margin:4px 6px 4px 0;text-align:center;font-size:11px}
+#dr{position:fixed;right:0;top:0;bottom:0;width:min(460px,100%);background:var(--cream);border-left:4px double var(--gold);box-shadow:-4px 0 16px rgba(0,0,0,.25);padding:14px;overflow:auto;display:none;z-index:1000}
+.st{background:var(--navy);color:#fff;border:2px solid var(--gold);border-radius:50%;width:28px;height:28px;line-height:24px;text-align:center;font-weight:bold}
+.tm{background:var(--red);color:#fff;padding:2px 7px;border:2px solid #fff;border-radius:10px;font-size:12px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.tm.way{border-style:dashed;opacity:.85}
+#login{max-width:340px;margin:12vh auto;text-align:center}
+#login input{width:100%;font:inherit;padding:11px;margin:8px 0;border:1px solid var(--navy)}
+@media(max-width:800px){#wrap{grid-template-columns:1fr;height:auto}#map{height:380px}}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="Elegant Mind">
+  <div><h1>Elegant Mind</h1><small>Xazina ovi · Boshqaruv paneli</small></div>
+  <span class="sp"></span>
+  <span class="chip" id="st"></span><span class="chip" id="tm"></span>
+  <button class="grn" id="start" style="display:none">START</button>
+  <button class="alt sm" id="reset" style="display:none">Tozalash</button>
+</header>
+<div id="login" class="box"><h2>Kirish</h2><input type="password" id="pw" placeholder="Panel paroli"><button id="lg">Kirish</button><p class="small" id="le"></p></div>
+<div id="wrap" style="display:none">
+  <div id="left"><div class="box"><h2>Tasdiqlash kutayotgan rasmlar</h2><div id="pq"></div></div><h2>Jamoalar</h2><div id="tl"></div></div>
+  <div id="map"></div>
+</div>
+<div id="dr"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const API = 'https://kmsnqmroqnqnkmanblik.supabase.co';
+const KEY = 'sb_publishable_WYN4VaquqY9qaSMC2vbLxw_nbKQuHG1';
+const PH = API + '/storage/v1/object/public/photos/';
+const $ = id => document.getElementById(id);
+let pass = sessionStorage.getItem('xo_pass'), D = null, sel = null, map, layer, fitted = false;
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hm = t => t ? new Date(t).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' }) : '—';
+const okPhoto = u => typeof u === 'string' && u.startsWith(PH);
+
+async function rpc(fn, args) {
+  const r = await fetch(API + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function load() {
+  try { D = await rpc('admin_dashboard', { p_pass: pass }); }
+  catch (e) {
+    if (/Parol/.test(e.message)) { sessionStorage.removeItem('xo_pass'); pass = null; $('wrap').style.display = 'none'; $('login').style.display = 'block'; $('le').textContent = 'Parol noto\'g\'ri'; return false; }
+    $('st').textContent = 'Aloqa yo\'q'; return false;
+  }
+  $('login').style.display = 'none'; $('wrap').style.display = 'grid';
+  render(); return true;
+}
+
+function photoTag(u, label) {
+  return okPhoto(u) ? '<span class="ph"><img src="' + esc(u) + '" onclick="window.open(this.src)"><br>' + label + '</span>' : '';
+}
+
+function render() {
+  const running = D.status === 'running';
+  $('st').textContent = running ? 'O\'yin boshlangan' : 'Kutish (jamoalar tuzilmoqda)';
+  $('start').style.display = running ? 'none' : 'inline-block';
+  $('reset').style.display = 'inline-block';
+
+  const teams = [...D.teams].sort((a, b) => b.score - a.score || b.done - a.done);
+  $('tl').innerHTML = teams.length ? teams.map(t =>
+    '<div class="team" onclick="openTeam(\'' + t.id + '\')"><span class="r">' + (t.pending_count ? '<span class="badge">' + t.pending_count + '</span> ' : '') + '<b>' + t.score + '</b> ball</span>' +
+    '<b>' + esc(t.name) + '</b><br><span class="small">' + t.members + ' kishi · bekat ' + t.done + '/' + t.total +
+    (t.finished_at ? ' · TUGATDI ' + hm(t.finished_at) : (t.current ? ' · keyingisi: ' + esc(t.current) : '')) + '</span></div>').join('')
+    : '<p class="small">Hali jamoa yo\'q.</p>';
+
+  const pend = [];
+  D.teams.forEach(t => t.detail.forEach(d => { if (d.status === 'pending') pend.push({ t, d }); }));
+  $('pq').innerHTML = pend.length ? pend.map(p =>
+    '<div class="pend">' + (okPhoto(p.d.photo) ? '<img src="' + esc(p.d.photo) + '" onclick="window.open(this.src)">' : '') +
+    '<div><b>' + esc(p.t.name) + '</b><br><span class="small">' + esc(p.d.station) + '</span><br>' +
+    '<button class="grn sm" onclick="review(' + p.d.progress_id + ',true)">Tasdiqlash</button> <button class="red sm" onclick="review(' + p.d.progress_id + ',false)">Rad etish</button></div></div>').join('')
+    : '<p class="small">Hozircha yo\'q.</p>';
+
+  if (sel) drawer();
+  drawMap();
+}
+
+function drawer() {
+  const t = D.teams.find(x => x.id === sel); if (!t) { $('dr').style.display = 'none'; return; }
+  $('dr').style.display = 'block';
+  const stt = { arrived: 'Yetib keldi', pending: 'Tasdiq kutilmoqda', approved: 'Bajarildi', rejected: 'Rad etildi' };
+  $('dr').innerHTML = '<button class="alt sm" onclick="closeTeam()" style="float:right">Yopish</button><h2>' + esc(t.name) + '</h2>' +
+    '<p class="small">' + t.members + ' kishi · boshlagan bekati: ' + esc(t.start_station || '—') + '<br>Ball: <b>' + t.score + '</b> · bekat ' + t.done + '/' + t.total +
+    (t.current ? '<br>Keyingi bekat: ' + esc(t.current) : '') + '</p>' +
+    (t.detail.length ? t.detail.map(d => '<div class="box"><b>' + d.seq + '. ' + esc(d.station) + '</b> <span class="small">· ' + (stt[d.status] || d.status) + '</span><br><span class="small">Yetdi: ' + hm(d.arrived_at) + ' · Tugadi: ' + hm(d.approved_at) + '</span><br>' +
+      photoTag(d.arrival_photo, 'kelganda') + photoTag(d.photo, 'topshiriq') +
+      (d.status === 'pending' ? '<br><button class="grn sm" onclick="review(' + d.progress_id + ',true)">Tasdiqlash</button> <button class="red sm" onclick="review(' + d.progress_id + ',false)">Rad etish</button>' : '') + '</div>').join('')
+      : '<p class="small">Hali birorta bekatga yetmagan.</p>');
+}
+function openTeam(id) { sel = id; drawer(); }
+function closeTeam() { sel = null; $('dr').style.display = 'none'; }
+
+async function review(id, ok) {
+  try { await rpc('admin_review', { p_pass: pass, p_progress: id, p_ok: ok }); load(); } catch (e) { alert('Xato: ' + e.message); }
+}
+
+function initMap() {
+  map = L.map('map').setView([41.0, 71.67], 13);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  layer = L.layerGroup().addTo(map);
+}
+function drawMap() {
+  if (!map) initMap();
+  layer.clearLayers();
+  const pts = [], count = {};
+  D.stations.forEach(s => {
+    if (s.lat == null) return;
+    pts.push([s.lat, s.lng]);
+    L.marker([s.lat, s.lng], { icon: L.divIcon({ className: '', html: '<div class="st">' + s.seq + '</div>', iconSize: [28, 28], iconAnchor: [14, 14] }) })
+      .bindTooltip(esc(s.name)).addTo(layer);
+  });
+  D.teams.forEach(t => {
+    const s = D.stations.find(x => x.id === t.at_station_id);
+    let pos = s && s.lat != null ? [s.lat, s.lng] : (t.last_lat != null ? [t.last_lat, t.last_lng] : null);
+    if (!pos) return;
+    const k = pos.join(','); const i = count[k] = (count[k] || 0) + 1;
+    const last = t.detail[t.detail.length - 1];
+    const way = last && last.status === 'approved';
+    L.marker([pos[0] + 0.00009 * i, pos[1] + 0.00009 * i], { icon: L.divIcon({ className: '', html: '<div class="tm' + (way ? ' way' : '') + '">' + esc(t.name) + '</div>', iconAnchor: [0, 0] }) })
+      .on('click', () => openTeam(t.id)).addTo(layer);
+  });
+  if (!fitted && pts.length) { map.fitBounds(pts, { padding: [40, 40], maxZoom: 16 }); fitted = true; }
+}
+
+$('lg').onclick = async () => { pass = $('pw').value; sessionStorage.setItem('xo_pass', pass); $('le').textContent = ''; if (await load()) startLoop(); };
+$('pw').onkeydown = e => { if (e.key === 'Enter') $('lg').click(); };
+$('start').onclick = async () => {
+  if (!confirm('O\'yinni hamma jamoalar uchun boshlaysizmi? Keyin yangi jamoa qo\'shib bo\'lmaydi.')) return;
+  try { await rpc('admin_start', { p_pass: pass }); load(); } catch (e) { alert('Xato: ' + e.message); }
+};
+$('reset').onclick = async () => {
+  if (prompt('Hamma jamoa va natijalar o\'chadi! Davom etish uchun TOZALASH deb yozing:') !== 'TOZALASH') return;
+  try { await rpc('admin_reset', { p_pass: pass }); closeTeam(); fitted = false; load(); } catch (e) { alert('Xato: ' + e.message); }
+};
+setInterval(() => {
+  if (!D || !D.started_at || D.status !== 'running') { $('tm').textContent = ''; return; }
+  const s = Math.max(0, Math.floor((Date.now() - new Date(D.started_at)) / 1000));
+  $('tm').textContent = 'Vaqt: ' + String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}, 1000);
+
+let loop = null;
+function startLoop() { clearInterval(loop); loop = setInterval(() => { if (pass) load(); }, 3000); }
+if (pass) load().then(ok => { if (ok) startLoop(); });
+</script>
+</body>
+</html>
