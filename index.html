@@ -49,7 +49,7 @@ const KEY = 'sb_publishable_WYN4VaquqY9qaSMC2vbLxw_nbKQuHG1';
 const app = document.getElementById('app'), bar = document.getElementById('bar');
 let team = localStorage.getItem('xo_team'), timer = null;
 let code = new URLSearchParams(location.search).get('s');
-let pick = null, mode = null;
+let pick = null, mode = null, quizIv = null;
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const show = html => { app.innerHTML = html; };
@@ -160,7 +160,7 @@ async function formJoin() {
 
 /* ---------- Asosiy holat ---------- */
 async function go() {
-  clearTimeout(timer);
+  clearTimeout(timer); clearInterval(quizIv);
   if (!team) return home();
   let st;
   try { st = await rpc('team_state', { p_team: team }); }
@@ -220,7 +220,33 @@ function photoForm(title, text, onFile) {
   };
 }
 
+function quizView(st) {
+  const qs = st.questions || [];
+  const locked = st.locked_until && new Date(st.locked_until) > new Date();
+  const lock = locked ? '<p class="err">Qayta urinish: ' + new Date(st.locked_until).toLocaleTimeString('uz-UZ') + ' dan keyin.</p>' : '';
+  show('<div class="card"><h2>Tezkor savollar</h2><p>' + esc(st.task) + '</p><p class="ok" id="tt">Vaqt: 60</p>' +
+    qs.map(q => '<label>' + esc(q) + ' =</label><input type="number" inputmode="numeric" class="qa">').join('') + lock +
+    '<div class="err" id="er"></div><button id="go">Yuborish</button></div>');
+  let left = 60, sent = false;
+  const send = async () => {
+    if (sent) return; sent = true; clearInterval(quizIv);
+    const ans = [...document.querySelectorAll('.qa')].map(i => i.value);
+    try {
+      const r = await rpc('submit_quiz', { p_team: team, p_answers: ans });
+      if (r.error) { document.getElementById('er').textContent = r.error; sent = false; return; }
+      if (r.ok) return go();
+      document.getElementById('er').textContent = 'Yetarli emas. Qayta urinib ko\'ring.'; setTimeout(go, 2000);
+    } catch (e) { document.getElementById('er').textContent = 'Aloqa xatosi.'; sent = false; }
+  };
+  document.getElementById('go').onclick = send;
+  quizIv = setInterval(() => {
+    left--; const t = document.getElementById('tt'); if (t) t.textContent = 'Vaqt: ' + Math.max(left, 0);
+    if (left <= 0) send();
+  }, 1000);
+}
+
 function taskView(st) {
+  if (st.task_type === 'quiz') return quizView(st);
   if (st.task_type === 'photo') {
     const note = st.rejected ? 'Oldingi rasm qabul qilinmadi. Qayta urinib ko\'ring!\n\n' : '';
     return photoForm('Topshiriq', note + st.task, async f => { const u = await upload(f); await rpc('submit_photo', { p_team: team, p_url: u }); go(); });
